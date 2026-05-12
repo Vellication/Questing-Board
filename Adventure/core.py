@@ -22,7 +22,6 @@ class Location:
 
     def connect(self, direction, other_location, back_direction=None):
         """Connect this location to another via a direction.
-
         If `back_direction` is provided, also creates the reverse connection.
         """
         self.exits[direction] = other_location
