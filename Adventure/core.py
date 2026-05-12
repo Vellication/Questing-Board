@@ -1,3 +1,10 @@
+"""Core engine objects for the text adventure runtime.
+
+This module defines the world model (`Location`, `Interactable`, `Item`),
+player state (`Player`), and command-processing game loop (`Game`).
+"""
+
+
 class Location:
     """
     Locations are places the player can occupy.
@@ -14,19 +21,26 @@ class Location:
         return self.name
 
     def connect(self, direction, other_location, back_direction=None):
+        """Connect this location to another via a direction.
+
+        If `back_direction` is provided, also creates the reverse connection.
+        """
         self.exits[direction] = other_location
         if back_direction:
             other_location.exits[back_direction] = self
 
     def add_interactable(self, interactable):
+        """Place an interactable object in this location."""
         self.interactables.append(interactable)
         interactable.location = self
 
     def remove_interactable(self, interactable):
+        """Remove an interactable object from this location."""
         self.interactables.remove(interactable)
         interactable.location = None
 
     def get_interactable(self, name):
+        """Return the first interactable matching `name`, or None."""
         lowered = name.lower()
         for interactable in self.interactables:
             if interactable.matches(lowered):
@@ -34,6 +48,7 @@ class Location:
         return None
 
     def look(self):
+        """Render a human-readable description of this location."""
         lines = [self.description]
         if self.exits:
             exits = ", ".join(sorted(self.exits.keys()))
@@ -45,6 +60,8 @@ class Location:
 
 
 class Interactable:
+    """Base type for objects the player can examine and act on."""
+
     def __init__(self, name, description, aliases=None):
         self.name = name
         self.description = description
@@ -52,23 +69,29 @@ class Interactable:
         self.location = None
 
     def matches(self, text):
+        """Return True when text matches the primary name or an alias."""
         lowered = text.lower()
         return lowered == self.name.lower() or lowered in self.aliases
 
     def actions(self, game, player):
+        """List action verbs currently available for this object."""
         return []
 
     def look(self, game, player):
+        """Describe this object and include context-aware actions."""
         available = self.actions(game, player)
         if available:
             return f"{self.description}\nPossible actions: {', '.join(available)}"
         return self.description
 
     def act(self, verb, game, player, target=None):
+        """Handle an action verb directed at this object."""
         return f"You can't {verb} the {self.name}."
 
 
 class Item(Interactable):
+    """Simple takeable interactable that moves into player inventory."""
+
     def __init__(self, name, description, aliases=None):
         super().__init__(name, description, aliases=aliases)
         self.taken = False
@@ -90,6 +113,8 @@ class Item(Interactable):
 
 
 class Player:
+    """Player state: current location and inventory."""
+
     def __init__(self, starting_location):
         self.current_location = starting_location
         self.inventory = set()
@@ -108,6 +133,14 @@ class Player:
 
 
 class Game:
+    """Command parser and runtime loop for a world built by `world_builder`.
+
+    `world_builder` must return a dict with:
+    - "start": starting `Location`
+    - "is_win": callable accepting `Player` and returning bool
+    - optional "win_message": custom message shown on victory
+    """
+
     DIRECTION_ALIASES = {
         "n": "north",
         "s": "south",
@@ -129,9 +162,11 @@ class Game:
         self.win_message = world.get("win_message", "You win!")
 
     def _find_local_interactable(self, name):
+        """Find an interactable in the player's current location."""
         return self.player.current_location.get_interactable(name)
 
     def _find_local_or_inventory(self, name):
+        """Resolve a name to a local object or an inventory item string."""
         local = self._find_local_interactable(name)
         if local:
             return local
@@ -145,6 +180,7 @@ class Game:
         return None
 
     def _check_win(self):
+        """Evaluate and apply win state. Returns True when won."""
         if self.win_condition(self.player):
             self.won = True
             self.running = False
@@ -152,6 +188,7 @@ class Game:
         return False
 
     def handle_command(self, raw_command):
+        """Parse and execute one user command, returning response text."""
         command = raw_command.strip()
         if not command:
             return "Enter a command."
@@ -240,6 +277,7 @@ class Game:
         return "I don't understand that command. Type 'help' for options."
 
     def repl(self):
+        """Run the interactive read-eval-print game loop."""
         print(self.title)
         print("Type 'help' for commands.\n")
         print(self.player.current_location.look())
