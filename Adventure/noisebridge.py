@@ -1,3 +1,10 @@
+"""Noisebridge-flavored world builder backed by the live NoiseQuest API.
+
+This module translates API resources (locations, guilds, and open quests) into
+Adventure engine primitives so they can be explored through the text-adventure
+REPL.
+"""
+
 import json
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -9,6 +16,7 @@ API_BASE = "https://nbquest.nthmost.net/api/v1"
 
 
 def _get_json(path, params=None):
+    """Fetch and decode JSON from an API path under ``API_BASE``."""
     query = ""
     if params:
         query = "?" + urlencode(params)
@@ -18,12 +26,15 @@ def _get_json(path, params=None):
 
 
 def _shorten(text, limit=68):
+    """Trim long text for room/item descriptions while preserving readability."""
     if len(text) <= limit:
         return text
     return text[: limit - 1] + "…"
 
 
 class InfoTerminal(Interactable):
+    """Interactable that summarizes API health and economy state."""
+
     def __init__(self, stats, version, economy):
         super().__init__(
             name="info terminal",
@@ -57,6 +68,8 @@ class InfoTerminal(Interactable):
 
 
 class GuildLedger(Interactable):
+    """Interactable that lists known guilds and short descriptions."""
+
     def __init__(self, guilds):
         super().__init__(
             name="guild ledger",
@@ -78,10 +91,12 @@ class GuildLedger(Interactable):
         return "\n".join(lines)
 
 class QuestLedger(Interactable):
-    def __init__(self, quests, guild_by_id):
+    """Interactable that lists open quests sorted by urgency."""
+
+    def __init__(self, quests, guild_by_id, name="quest ledger", description=None):
         super().__init__(
-            name="quest ledger",
-            description="A board listing all open quests by urgency.",
+            name=name,
+            description=description or "A board listing open quests by urgency.",
             aliases=["quests", "quest list"],
         )
         self.quests = quests
@@ -95,6 +110,9 @@ class QuestLedger(Interactable):
             return super().act(verb, game, player, target=target)
         sorted_quests = sorted(self.quests, key=lambda q: q.get("urgency", 0), reverse=True)
         lines = ["Open Quests (by urgency):"]
+        if not sorted_quests:
+            lines.append("  (none)")
+            return "\n".join(lines)
         for q in sorted_quests:
             guild_name = self.guild_by_id.get(q.get("guild_id"), "No guild")
             lines.append(
@@ -104,6 +122,8 @@ class QuestLedger(Interactable):
         return "\n".join(lines)
 
 class QuestInteractable(Interactable):
+    """Interactable wrapper for a single open quest claim in the simulation."""
+
     def __init__(self, quest, guild_name, location_name):
         super().__init__(
             name=f"quest {quest['id']}",
@@ -150,6 +170,7 @@ class QuestInteractable(Interactable):
 
 
 def _load_open_quests(limit=80):
+    """Load up to ``limit`` open quests, following API cursor pagination."""
     items = []
     cursor = None
     while len(items) < limit:
@@ -167,6 +188,7 @@ def _load_open_quests(limit=80):
 
 
 def build_noisebridge_world():
+    """Build the world graph from live NoiseQuest API data."""
     locations = _get_json("/locations")
     guilds = _get_json("/guilds")
     stats = _get_json("/stats")
@@ -176,6 +198,12 @@ def build_noisebridge_world():
 
     guild_by_id = {g["id"]: g["name"] for g in guilds}
     location_data_by_id = {loc["id"]: loc for loc in locations}
+    quests_by_guild_id = {}
+    for quest in quests:
+        guild_id = quest.get("guild_id")
+        if guild_id is None:
+            continue
+        quests_by_guild_id.setdefault(guild_id, []).append(quest)
 
     quest_board = Location(
         "Quest Board",
@@ -200,6 +228,15 @@ def build_noisebridge_world():
         room = Location(
             f"{guild['name']} Guild Hall",
             f"{description}\nGuild slug: {guild['slug']}",
+        )
+        guild_quests = quests_by_guild_id.get(guild["id"], [])
+        room.add_interactable(
+            QuestLedger(
+                guild_quests,
+                guild_by_id,
+                name=f"{guild['name']} quest ledger",
+                description=f"A board listing open quests for the {guild['name']} guild.",
+            )
         )
         guild_rooms[guild["id"]] = room
         quest_board.connect(f"guild-{guild['slug']}", room, "board")
