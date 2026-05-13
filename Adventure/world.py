@@ -1,4 +1,4 @@
-from core import Interactable, Item, Location
+from core import Game, Interactable, Item, Location
 
 
 class Gate(Interactable):
@@ -106,3 +106,7 @@ def build_world():
         "is_win": lambda player: player.current_location is outside,
         "win_message": "You escaped. You win!",
     }
+
+
+if __name__ == "__main__":
+    Game(build_world).repl()
